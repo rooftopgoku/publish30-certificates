@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Publish30 Certificate Verification</title>
+<meta name="robots" content="noindex" />
+<style>
+  :root {
+    --blue: #2E7DF0;
+    --blue-light: #EFF5FF;
+    --blue-border: #D8E6FA;
+    --dark: #0C0F16;
+    --gray: #5C6470;
+    --green: #1a7f37;
+    --red: #b42318;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #fafbfc;
+    color: var(--dark);
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 480px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 36px 32px;
+    box-shadow: 0 2px 24px rgba(12,15,22,0.06);
+    text-align: center;
+  }
+  .brand {
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    color: var(--gray);
+    margin-bottom: 20px;
+  }
+  .brand span { color: var(--blue); }
+  .state { display: none; }
+  .state.active { display: block; }
+
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid var(--blue-border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    margin: 8px auto 16px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .badge {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    margin: 0 auto 18px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px;
+  }
+  .badge.ok { background: var(--blue-light); color: var(--blue); }
+  .badge.err { background: #fdeceb; color: var(--red); }
+
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--gray); font-size: 14px; margin: 0 0 20px; }
+
+  .name { font-size: 24px; font-weight: 700; margin: 4px 0 2px; }
+  .completed { font-size: 15px; color: var(--gray); margin: 0 0 20px; }
+
+  .issuer {
+    font-size: 13px;
+    color: var(--gray);
+    border-top: 1px solid #eee;
+    padding-top: 16px;
+    margin-top: 4px;
+  }
+
+  .credid {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #9aa1ab;
+    margin-top: 14px;
+    word-break: break-all;
+  }
+
+  .err-text { color: var(--gray); font-size: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">Publish<span>30</span> &middot; Certificate Verification</div>
+
+    <!-- Loading -->
+    <div id="state-loading" class="state active">
+      <div class="spinner"></div>
+      <p class="sub">Checking credential&hellip;</p>
+    </div>
+
+    <!-- Found -->
+    <div id="state-found" class="state">
+      <div class="badge ok">&#10003;</div>
+      <h1>Verified credential</h1>
+      <div class="name" id="found-name"></div>
+      <div class="completed" id="found-completed"></div>
+      <div class="issuer">Issued by Publish30 &mdash; Jacob Martin and Jay Yang</div>
+      <div class="credid" id="found-id"></div>
+    </div>
+
+    <!-- Not found -->
+    <div id="state-notfound" class="state">
+      <div class="badge err">&#33;</div>
+      <h1>Credential not found</h1>
+      <p class="err-text">
+        We couldn't find a Publish30 certificate with this ID. Double-check the link, or
+        contact Jacob if you think this is a mistake.
+      </p>
+    </div>
+
+    <!-- Missing ID -->
+    <div id="state-missing" class="state">
+      <div class="badge err">&#33;</div>
+      <h1>No credential ID</h1>
+      <p class="err-text">
+        This link is missing a credential ID. Use the full verification link from your
+        certificate email, for example
+        <code>/verify/abc12345</code> or <code>/verify/?id=abc12345</code>.
+      </p>
+    </div>
+
+    <!-- Network / server error -->
+    <div id="state-error" class="state">
+      <div class="badge err">&#33;</div>
+      <h1>Something went wrong</h1>
+      <p class="err-text">
+        We couldn't check this credential right now. Please try again in a minute.
+      </p>
+    </div>
+  </div>
+
+<script>
+  // ---- Configuration ---------------------------------------------------
+  // Public anon/publishable key -- safe to expose in client-side code. RLS on the
+  // `credentials` table has zero policies (deny-all), and this key can only call the
+  // verify_credential() RPC, which returns a finisher's name + completion date for one
+  // exact credential ID and nothing else (no email, no listing, no enumeration).
+  var SUPABASE_URL = "https://serllmlgxhtqivliqmel.supabase.co";
+  var SUPABASE_ANON_KEY = "sb_publishable_1H6BXRdWdX5jfRevJay4rQ_bJQpEW1A";
+  // ------------------------------------------------------------------------
+
+  function showState(id) {
+    document.querySelectorAll(".state").forEach(function (el) {
+      el.classList.toggle("active", el.id === id);
+    });
+  }
+
+  function getCredentialId() {
+    // Prefer an explicit ?id= query param (works on any static host, no server config
+    // needed). Otherwise fall back to the last non-empty path segment, so a clean URL
+    // like /verify/abc12345 works wherever the host rewrites /verify/* to this page
+    // (e.g. Cloudflare Pages _redirects, included alongside this file).
+    var params = new URLSearchParams(window.location.search);
+    var fromQuery = params.get("id");
+    if (fromQuery) return fromQuery.trim();
+
+    var segments = window.location.pathname.split("/").filter(Boolean);
+    var last = segments[segments.length - 1] || "";
+    // Guard against the bare "/verify" or "/verify/" page itself being treated as an ID.
+    if (!last || last.toLowerCase() === "verify" || last.toLowerCase() === "index.html") {
+      return "";
+    }
+    return last.trim();
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  async function verify() {
+    var credentialId = getCredentialId();
+    if (!credentialId) {
+      showState("state-missing");
+      return;
+    }
+
+    try {
+      var res = await fetch(SUPABASE_URL + "/rest/v1/rpc/verify_credential", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: "Bearer " + SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ p_credential_id: credentialId }),
+      });
+
+      if (!res.ok) {
+        showState("state-error");
+        return;
+      }
+
+      var rows = await res.json();
+      if (!Array.isArray(rows) || rows.length === 0) {
+        showState("state-notfound");
+        return;
+      }
+
+      var row = rows[0];
+      document.getElementById("found-name").textContent = row.full_name;
+      document.getElementById("found-completed").textContent =
+        "Completed Publish30 in " + row.completion_date;
+      document.getElementById("found-id").textContent = "Credential ID: " + credentialId;
+      showState("state-found");
+    } catch (err) {
+      showState("state-error");
+    }
+  }
+
+  verify();
+</script>
+</body>
+</html>
