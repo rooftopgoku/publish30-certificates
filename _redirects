@@ -1,0 +1,7 @@
+# Cloudflare Pages rewrite rule (if you deploy there): serves verify/index.html for any
+# path under /verify/ with a 200 (a rewrite, not a redirect), so clean URLs like
+# /verify/abc12345 work. The page's own JS then reads the ID from that last path segment.
+# If you deploy to GitHub Pages instead, this file is simply ignored -- use the query-string
+# form of the link instead (https://yourdomain/verify/?id=abc12345), which needs no
+# server-side config at all. See README.md.
+/verify/*  /verify/index.html  200
