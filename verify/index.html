@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Publish30 Certificate Verification</title>
 <meta name="robots" content="noindex" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root {
     --blue: #2E7DF0;
@@ -19,15 +20,29 @@
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #fafbfc;
+    background: #f2f4f7;
     color: var(--dark);
     display: flex;
     min-height: 100vh;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    padding: 32px 16px;
   }
-  .card {
+  .page { width: 100%; max-width: 680px; display: flex; flex-direction: column; align-items: center; }
+  .brand {
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    color: var(--gray);
+    margin-bottom: 28px;
+    text-align: center;
+  }
+  .brand span { color: var(--blue); }
+  .state { display: none; width: 100%; }
+  .state.active { display: flex; flex-direction: column; align-items: center; }
+
+  /* ---- loading / status card (non-certificate states) ---- */
+  .status-card {
     width: 100%;
     max-width: 480px;
     background: #fff;
@@ -37,17 +52,6 @@
     box-shadow: 0 2px 24px rgba(12,15,22,0.06);
     text-align: center;
   }
-  .brand {
-    font-weight: 700;
-    font-size: 15px;
-    letter-spacing: 0.02em;
-    color: var(--gray);
-    margin-bottom: 20px;
-  }
-  .brand span { color: var(--blue); }
-  .state { display: none; }
-  .state.active { display: block; }
-
   .spinner {
     width: 28px; height: 28px;
     border: 3px solid var(--blue-border);
@@ -57,7 +61,6 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
   .badge {
     width: 56px; height: 56px;
     border-radius: 50%;
@@ -65,82 +68,171 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 26px;
   }
-  .badge.ok { background: var(--blue-light); color: var(--blue); }
   .badge.err { background: #fdeceb; color: var(--red); }
-
-  h1 { font-size: 20px; margin: 0 0 4px; }
+  .status-card h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { color: var(--gray); font-size: 14px; margin: 0 0 20px; }
+  .err-text { color: var(--gray); font-size: 14px; line-height: 1.5; }
 
-  .name { font-size: 24px; font-weight: 700; margin: 4px 0 2px; }
-  .completed { font-size: 15px; color: var(--gray); margin: 0 0 20px; }
-
-  .issuer {
+  /* ---- the certificate itself ---- */
+  .cert {
+    position: relative;
+    width: 100%;
+    background: #fff;
+    border: 1px solid #e5e8ee;
+    border-radius: 20px;
+    overflow: hidden;
+    padding: 52px 48px 32px;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(12,15,22,0.03), 0 16px 40px rgba(12,15,22,0.07);
+  }
+  .cert::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 5px;
+    background: var(--blue);
+  }
+  .cert-brand {
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: 0.02em;
+    color: var(--dark);
+    margin-bottom: 10px;
+  }
+  .cert-brand span { color: var(--blue); }
+  .cert-kicker {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gray);
+    margin-bottom: 44px;
+  }
+  .cert-name {
+    font-size: clamp(26px, 5vw, 42px);
+    font-weight: 800;
+    color: var(--dark);
+    line-height: 1.1;
+    margin-bottom: 16px;
+    word-break: break-word;
+  }
+  .cert-desc {
+    font-size: 15px;
+    color: var(--gray);
+    max-width: 420px;
+    margin: 0 auto 10px;
+    line-height: 1.55;
+  }
+  .cert-date {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 40px;
+  }
+  .cert-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    border-top: 1px solid #eef0f3;
+    padding-top: 20px;
     font-size: 13px;
     color: var(--gray);
-    border-top: 1px solid #eee;
-    padding-top: 16px;
-    margin-top: 4px;
+    text-align: left;
   }
-
-  .credid {
+  .cert-id {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     color: #9aa1ab;
-    margin-top: 14px;
-    word-break: break-all;
   }
 
-  .err-text { color: var(--gray); font-size: 14px; line-height: 1.5; }
+  .download-btn {
+    margin-top: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: 1.5px solid var(--blue);
+    color: var(--blue);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 11px 22px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .download-btn:hover { background: var(--blue); color: #fff; }
+  .download-btn:disabled { opacity: 0.5; cursor: default; }
+  .download-btn svg { display: block; }
 </style>
 </head>
 <body>
-  <div class="card">
+  <div class="page">
     <div class="brand">Publish<span>30</span> &middot; Certificate Verification</div>
 
     <!-- Loading -->
     <div id="state-loading" class="state active">
-      <div class="spinner"></div>
-      <p class="sub">Checking credential&hellip;</p>
+      <div class="status-card">
+        <div class="spinner"></div>
+        <p class="sub">Checking credential&hellip;</p>
+      </div>
     </div>
 
-    <!-- Found -->
+    <!-- Found: the certificate -->
     <div id="state-found" class="state">
-      <div class="badge ok">&#10003;</div>
-      <h1>Verified credential</h1>
-      <div class="name" id="found-name"></div>
-      <div class="completed" id="found-completed"></div>
-      <div class="issuer">Issued by Publish30 &mdash; Jacob Martin and Jay Yang</div>
-      <div class="credid" id="found-id"></div>
+      <div class="cert" id="certificate-card">
+        <div class="cert-brand">Publish<span>30</span></div>
+        <div class="cert-kicker">Certificate of Completion</div>
+        <div class="cert-name" id="found-name"></div>
+        <div class="cert-desc">has successfully completed the Publish30 30-day writing challenge, publishing every single day.</div>
+        <div class="cert-date" id="found-completed"></div>
+        <div class="cert-footer">
+          <div>Issued by Jay Yang and Kevin Shim</div>
+          <div class="cert-id" id="found-id"></div>
+        </div>
+      </div>
+      <button id="download-btn" class="download-btn" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+        Download cert &amp; share on LI
+      </button>
     </div>
 
     <!-- Not found -->
     <div id="state-notfound" class="state">
-      <div class="badge err">&#33;</div>
-      <h1>Credential not found</h1>
-      <p class="err-text">
-        We couldn't find a Publish30 certificate with this ID. Double-check the link, or
-        contact Jacob if you think this is a mistake.
-      </p>
+      <div class="status-card">
+        <div class="badge err">&#33;</div>
+        <h1>Credential not found</h1>
+        <p class="err-text">
+          We couldn't find a Publish30 certificate with this ID. Double-check the link, or
+          contact Jacob if you think this is a mistake.
+        </p>
+      </div>
     </div>
 
     <!-- Missing ID -->
     <div id="state-missing" class="state">
-      <div class="badge err">&#33;</div>
-      <h1>No credential ID</h1>
-      <p class="err-text">
-        This link is missing a credential ID. Use the full verification link from your
-        certificate email, for example
-        <code>/verify/abc12345</code> or <code>/verify/?id=abc12345</code>.
-      </p>
+      <div class="status-card">
+        <div class="badge err">&#33;</div>
+        <h1>No credential ID</h1>
+        <p class="err-text">
+          This link is missing a credential ID. Use the full verification link from your
+          certificate email, for example
+          <code>/verify/abc12345</code> or <code>/verify/?id=abc12345</code>.
+        </p>
+      </div>
     </div>
 
     <!-- Network / server error -->
     <div id="state-error" class="state">
-      <div class="badge err">&#33;</div>
-      <h1>Something went wrong</h1>
-      <p class="err-text">
-        We couldn't check this credential right now. Please try again in a minute.
-      </p>
+      <div class="status-card">
+        <div class="badge err">&#33;</div>
+        <h1>Something went wrong</h1>
+        <p class="err-text">
+          We couldn't check this credential right now. Please try again in a minute.
+        </p>
+      </div>
     </div>
   </div>
 
@@ -178,11 +270,7 @@
     return last.trim();
   }
 
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
-  }
+  var currentCredentialId = "";
 
   async function verify() {
     var credentialId = getCredentialId();
@@ -214,15 +302,43 @@
       }
 
       var row = rows[0];
+      currentCredentialId = credentialId;
       document.getElementById("found-name").textContent = row.full_name;
       document.getElementById("found-completed").textContent =
-        "Completed Publish30 in " + row.completion_date;
+        "Completed in " + row.completion_date;
       document.getElementById("found-id").textContent = "Credential ID: " + credentialId;
       showState("state-found");
     } catch (err) {
       showState("state-error");
     }
   }
+
+  document.getElementById("download-btn").addEventListener("click", async function () {
+    var btn = this;
+    var certEl = document.getElementById("certificate-card");
+    if (typeof html2canvas === "undefined") {
+      alert("Download isn't available right now, please try again in a moment.");
+      return;
+    }
+    btn.disabled = true;
+    var originalLabel = btn.innerHTML;
+    btn.textContent = "Preparing…";
+    try {
+      var canvas = await html2canvas(certEl, { scale: 2, backgroundColor: "#ffffff" });
+      var link = document.createElement("a");
+      var safeId = (currentCredentialId || "certificate").replace(/[^a-z0-9]/gi, "");
+      link.download = "Publish30-Certificate-" + safeId + ".png";
+      link.href = canvas.toDataURL("image/png");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      alert("Something went wrong generating the download. Please try again.");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalLabel;
+    }
+  });
 
   verify();
 </script>
